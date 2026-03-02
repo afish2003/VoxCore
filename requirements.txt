@@ -1,0 +1,23 @@
+# VoxCore Requirements
+# Install with: pip install -r requirements.txt
+#
+# PyAudio note (Windows):
+#   If "pip install pyaudio" fails, download the pre-built wheel from:
+#   https://www.lfd.uci.edu/~gohlke/pythonlibs/#pyaudio
+#   Then: pip install PyAudio-0.2.14-cp311-cp311-win_amd64.whl
+
+# Configuration
+python-dotenv>=1.0.0
+
+# Wake word detection (Picovoice Porcupine)
+pvporcupine>=3.0.0
+
+# Audio capture and playback
+pyaudio>=0.2.11
+
+# Speech-to-text (local, no API required)
+# Note: faster-whisper 1.1.0+ has Windows/Python 3.11 compatible wheels
+faster-whisper>=1.1.0
+
+# LLM API calls (vLLM and Ollama both use HTTP)
+requests>=2.31.0
