@@ -3,12 +3,16 @@ VoxCore - Wake-Word-Driven Voice Assistant Core
 
 Main loop:
 
-    IDLE -> (wake word) -> LISTEN -> STT -> LLM -> TTS -> SPEAK -> IDLE
+    IDLE -> (wake word) -> LISTEN -> STT -> LLM (+tools) -> TTS -> SPEAK -> IDLE
+
+The LLM can call tools. All tool decisions are made by the LLM at runtime.
+There is no keyword routing or hardcoded command logic.
 
 To run:
     python main.py
 
 To swap any provider, edit .env only. No code changes needed.
+To add a tool, create voxcore/tools/your_tool.py and register it below.
 """
 import logging
 
@@ -19,6 +23,10 @@ from voxcore.llm.factory import get_llm
 from voxcore.tts.factory import get_tts
 from voxcore.audio.recorder import Recorder
 from voxcore.orchestrator import Orchestrator
+from voxcore.tools.registry import ToolRegistry
+from voxcore.tools.datetime_tool import GetCurrentDatetime
+from voxcore.tools.open_app import OpenApplication
+from voxcore.tools.web_search import WebSearch
 
 
 def main():
@@ -38,23 +46,35 @@ def main():
     logger.info(f"  TTS         : {config.tts_provider}")
     logger.info("=" * 60)
 
-    # Initialize providers
+    # --- Initialize providers ---
     stt      = get_stt(config)
     llm      = get_llm(config)
     tts      = get_tts(config)
     recorder = Recorder(config)
 
-    # Wire providers into the pipeline orchestrator
+    # --- Register tools ---
+    # The LLM decides which tools to call at runtime based on user intent.
+    # To add a tool: import it, instantiate it, call .register().
+    # No other files need to change.
+    tool_registry = (
+        ToolRegistry()
+        .register(GetCurrentDatetime())
+        .register(OpenApplication())
+        .register(WebSearch())
+    )
+    logger.info(f"  Tools       : {len(tool_registry)} registered")
+
+    # --- Wire everything into the orchestrator ---
     orchestrator = Orchestrator(
         stt=stt,
         llm=llm,
         tts=tts,
         recorder=recorder,
         config=config,
+        tool_registry=tool_registry,
     )
 
-    # Wire the wake engine to the pipeline
-    # on_wake is called once per detection; it blocks while the pipeline runs
+    # --- Wire the wake engine to the pipeline ---
     wake_engine = get_wake_engine(config, on_wake=orchestrator.run_pipeline)
 
     logger.info(f"Say '{config.wake_keyword.upper()}' to activate.  Ctrl+C to exit.")

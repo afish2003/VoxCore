@@ -19,5 +19,5 @@ pyaudio>=0.2.11
 # Note: faster-whisper 1.1.0+ has Windows/Python 3.11 compatible wheels
 faster-whisper>=1.1.0
 
-# LLM API calls (vLLM and Ollama both use HTTP)
+# LLM and tool HTTP calls (vLLM, Ollama, ElevenLabs, WebSearch all use HTTP)
 requests>=2.31.0
