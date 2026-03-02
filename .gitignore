@@ -1,0 +1,115 @@
+# =========================
+# General
+# =========================
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+*.bak
+
+# =========================
+# Environment Variables
+# =========================
+.env
+.env.*
+*.env
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Mypy
+.mypy_cache/
+
+# =========================
+# Node / JavaScript
+# =========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build outputs
+.next/
+out/
+dist/
+
+# =========================
+# TypeScript
+# =========================
+*.tsbuildinfo
+
+# =========================
+# IDEs
+# =========================
+.vscode/
+.idea/
+*.code-workspace
+
+# =========================
+# OS / System
+# =========================
+Desktop.ini
+$RECYCLE.BIN/
+
+# =========================
+# AI / Model Files
+# =========================
+models/
+checkpoints/
+*.pt
+*.pth
+*.onnx
+*.bin
+*.ckpt
+
+# =========================
+# Audio Files (optional)
+# =========================
+*.wav
+*.mp3
+*.flac
+*.ogg
+
+# =========================
+# Database / Cache
+# =========================
+*.sqlite3
+*.db
+.cache/
+
+# =========================
+# Docker
+# =========================
+*.pid
+docker-compose.override.yml
+
+# =========================
+# Misc
+# =========================
+*.zip
+*.tar
+*.gz
