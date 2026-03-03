@@ -1,35 +1,44 @@
 """
 VoxCore Pipeline Orchestrator
 
-Runs one full interaction cycle per wake-word detection:
+Full pipeline per wake-word detection:
 
-    LISTEN -> STT -> LLM -> TTS -> SPEAK
+    LISTEN -> STT -> LLM (+tools) -> TTS -> SPEAK
 
-This class is provider-agnostic. It receives concrete implementations
-of STT, LLM, and TTS at construction time via dependency injection.
-Swapping any provider does not require touching this file.
+The LLM step is a multi-turn loop:
+
+    1. Send user text + tool definitions to the LLM.
+    2. If the LLM returns tool calls: execute each tool, append results,
+       send the updated conversation back to the LLM. Repeat.
+    3. Once the LLM returns a plain text response: send it to TTS.
+
+This class is provider-agnostic and tool-agnostic.
+Swapping any provider or adding/removing tools requires no changes here.
 """
+import json
 import logging
+from typing import Optional
 
 from voxcore.config import Config
 from voxcore.stt.base import STTProvider
 from voxcore.llm.base import LLMClient
 from voxcore.tts.base import TTSProvider
 from voxcore.audio.recorder import Recorder
+from voxcore.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
-# Skip transcriptions shorter than this (noise, mic pops, empty audio)
 _MIN_TRANSCRIPT_LEN = 3
+_FALLBACK_RESPONSE = "I'm sorry, I wasn't able to complete that request."
 
 
 class Orchestrator:
     """
-    Stateless pipeline runner.
+    Stateless pipeline runner with tool-calling support.
 
-    Each call to run_pipeline() executes one complete listen-and-respond
-    cycle. The method is called directly by the wake word engine callback
-    and blocks while the cycle runs.
+    Providers and the tool registry are injected at construction.
+    run_pipeline() is the only public method; the wake engine calls it
+    once per detection and blocks until the cycle is complete.
     """
 
     def __init__(
@@ -39,24 +48,30 @@ class Orchestrator:
         tts: TTSProvider,
         recorder: Recorder,
         config: Config,
+        tool_registry: Optional[ToolRegistry] = None,
     ):
         self.stt = stt
         self.llm = llm
         self.tts = tts
         self.recorder = recorder
         self.system_prompt = config.llm_system_prompt
+        self.tool_registry = tool_registry
+        self.max_tool_rounds = config.llm_max_tool_rounds
 
     def run_pipeline(self) -> None:
         """
         Execute one full listen -> process -> speak cycle.
 
-        Called once per wake word detection. Errors are caught and
-        logged so the wake engine can resume idle listening cleanly.
+        Errors are caught and logged so the wake engine resumes cleanly.
         """
         try:
             self._run()
         except Exception as e:
             logger.error(f"Pipeline error: {e}", exc_info=True)
+
+    # ------------------------------------------------------------------
+    # Internal pipeline
+    # ------------------------------------------------------------------
 
     def _run(self) -> None:
         # 1. Listen
@@ -72,17 +87,81 @@ class Orchestrator:
             logger.info("  (nothing detected - returning to idle)")
             return
 
-        # 3. Generate
-        logger.info("[LLM]")
-        response_text = self.llm.generate(user_text, self.system_prompt)
-        logger.info(f"  response: {response_text!r}")
+        # 3. LLM + tool loop
+        final_text = self._llm_tool_loop(user_text)
+        logger.info(f"  final response: {final_text!r}")
 
         # 4. Synthesize
         logger.info("[TTS]")
-        audio_out = self.tts.synthesize(response_text)
+        audio_out = self.tts.synthesize(final_text)
 
         # 5. Speak
         logger.info("[SPEAKING]")
         self.recorder.play_wav(audio_out)
 
         logger.info("[IDLE]")
+
+    def _llm_tool_loop(self, user_text: str) -> str:
+        """
+        Run the multi-turn LLM + tool execution loop.
+
+        Conversation starts with the system prompt and the user's message.
+        Each round:
+          - If the LLM returns tool calls: execute them, append results, repeat.
+          - If the LLM returns text: return it as the final answer.
+        Loop is capped at max_tool_rounds to prevent runaway chains.
+
+        Returns the final natural language response string.
+        """
+        logger.info("[LLM]")
+
+        # Build the initial conversation
+        messages = [
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user",   "content": user_text},
+        ]
+
+        # Provide tool specs only if tools are registered
+        tools = self.tool_registry.specs() if self.tool_registry else None
+
+        for round_num in range(1, self.max_tool_rounds + 1):
+            response = self.llm.chat(messages, tools=tools)
+
+            # --- Final text response: done ---
+            if not response.has_tool_calls:
+                return response.text or _FALLBACK_RESPONSE
+
+            # --- Tool calls: execute each and append results ---
+            logger.info(f"  [TOOL ROUND {round_num}/{self.max_tool_rounds}]")
+
+            # Append the assistant's tool_calls turn to the conversation
+            messages.append({
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.name,
+                            "arguments": json.dumps(tc.arguments),
+                        },
+                    }
+                    for tc in response.tool_calls
+                ],
+            })
+
+            # Execute each tool and append its result as a tool message
+            for tc in response.tool_calls:
+                logger.info(f"    -> {tc.name}({tc.arguments})")
+                result = self.tool_registry.execute(tc.name, tc.arguments)
+                logger.info(f"    <- {result!r}")
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": result,
+                })
+
+        # Safety valve: max rounds reached without a text response
+        logger.warning(f"Max tool rounds ({self.max_tool_rounds}) reached without final response.")
+        return _FALLBACK_RESPONSE

@@ -2,14 +2,20 @@
 Ollama LLM client.
 
 Talks to a locally running Ollama server (http://localhost:11434).
+Supports tool calling via Ollama's OpenAI-compatible tools field.
 Good for development and CPU-only machines.
-Configure the model in .env (OLLAMA_MODEL).
+
+Note: Ollama returns tool call arguments as a dict (not a JSON string)
+and does not always include a tool call ID; both are handled here.
 """
+import json
 import logging
+from typing import List, Optional
+
 import requests
 
 from voxcore.config import Config
-from voxcore.llm.base import LLMClient
+from voxcore.llm.base import LLMClient, LLMResponse, ToolCall
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +32,14 @@ class OllamaClient(LLMClient):
         self.max_tokens = config.llm_max_tokens
         logger.info(f"Ollama client ready: {self.model} @ {self.url}")
 
-    def generate(self, user_text: str, system_prompt: str) -> str:
-        payload = {
+    def chat(
+        self,
+        messages: List[dict],
+        tools: Optional[List[dict]] = None,
+    ) -> LLMResponse:
+        payload: dict = {
             "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_text},
-            ],
+            "messages": messages,
             "stream": False,
             "options": {
                 "temperature": self.temperature,
@@ -40,6 +47,27 @@ class OllamaClient(LLMClient):
                 "num_predict": self.max_tokens,
             },
         }
+        if tools:
+            payload["tools"] = tools
+
         response = requests.post(self.url, json=payload, timeout=self.timeout)
         response.raise_for_status()
-        return response.json()["message"]["content"].strip()
+        message = response.json()["message"]
+
+        raw_tool_calls = message.get("tool_calls") or []
+        if raw_tool_calls:
+            tool_calls = []
+            for i, tc in enumerate(raw_tool_calls):
+                fn = tc["function"]
+                # Ollama returns arguments as a dict; normalise in case it's a string.
+                args = fn.get("arguments", {})
+                if isinstance(args, str):
+                    args = json.loads(args)
+                tool_calls.append(ToolCall(
+                    id=tc.get("id") or f"call_{i}",
+                    name=fn["name"],
+                    arguments=args,
+                ))
+            return LLMResponse(tool_calls=tool_calls)
+
+        return LLMResponse(text=(message.get("content") or "").strip())

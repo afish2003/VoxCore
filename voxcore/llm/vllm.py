@@ -2,14 +2,17 @@
 vLLM LLM client.
 
 Uses the OpenAI-compatible /v1/chat/completions endpoint exposed by vLLM.
+Supports tool calling via the standard OpenAI tools/tool_choice fields.
 Best for GPU inference on Lambda Labs or a dedicated inference server.
-Configure the endpoint and model in .env (VLLM_URL, VLLM_MODEL).
 """
+import json
 import logging
+from typing import List, Optional
+
 import requests
 
 from voxcore.config import Config
-from voxcore.llm.base import LLMClient
+from voxcore.llm.base import LLMClient, LLMResponse, ToolCall
 
 logger = logging.getLogger(__name__)
 
@@ -26,17 +29,40 @@ class VLLMClient(LLMClient):
         self.max_tokens = config.llm_max_tokens
         logger.info(f"vLLM client ready: {self.model} @ {self.url}")
 
-    def generate(self, user_text: str, system_prompt: str) -> str:
-        payload = {
+    def chat(
+        self,
+        messages: List[dict],
+        tools: Optional[List[dict]] = None,
+    ) -> LLMResponse:
+        payload: dict = {
             "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_text},
-            ],
+            "messages": messages,
             "temperature": self.temperature,
             "top_p": self.top_p,
             "max_tokens": self.max_tokens,
         }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+
         response = requests.post(self.url, json=payload, timeout=self.timeout)
         response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"].strip()
+        message = response.json()["choices"][0]["message"]
+
+        raw_tool_calls = message.get("tool_calls") or []
+        if raw_tool_calls:
+            tool_calls = []
+            for i, tc in enumerate(raw_tool_calls):
+                fn = tc["function"]
+                # vLLM returns arguments as a JSON string; parse it.
+                args = fn.get("arguments", "{}")
+                if isinstance(args, str):
+                    args = json.loads(args)
+                tool_calls.append(ToolCall(
+                    id=tc.get("id") or f"call_{i}",
+                    name=fn["name"],
+                    arguments=args,
+                ))
+            return LLMResponse(tool_calls=tool_calls)
+
+        return LLMResponse(text=(message.get("content") or "").strip())

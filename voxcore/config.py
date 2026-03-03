@@ -34,6 +34,7 @@ class Config:
     llm_temperature: float
     llm_top_p: float
     llm_max_tokens: int
+    llm_max_tool_rounds: int  # max tool-call iterations before giving up
 
     vllm_url: str
     vllm_model: str
@@ -89,6 +90,7 @@ def load_config() -> Config:
         llm_temperature=float(os.getenv("LLM_TEMPERATURE", "0.6")),
         llm_top_p=float(os.getenv("LLM_TOP_P", "0.9")),
         llm_max_tokens=int(os.getenv("LLM_MAX_TOKENS", "200")),
+        llm_max_tool_rounds=int(os.getenv("LLM_MAX_TOOL_ROUNDS", "5")),
 
         vllm_url=os.getenv("VLLM_URL", "http://127.0.0.1:8000/v1/chat/completions"),
         vllm_model=os.getenv("VLLM_MODEL", "Qwen/Qwen2.5-7B-Instruct"),
