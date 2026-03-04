@@ -12,6 +12,10 @@ The LLM step is a multi-turn loop:
        send the updated conversation back to the LLM. Repeat.
     3. Once the LLM returns a plain text response: send it to TTS.
 
+Rolling conversation memory is maintained across pipeline invocations so
+follow-up questions work correctly. History is capped at max_history
+messages (oldest are dropped first) to keep token counts bounded.
+
 This class is provider-agnostic and tool-agnostic.
 Swapping any provider or adding/removing tools requires no changes here.
 """
@@ -34,11 +38,15 @@ _FALLBACK_RESPONSE = "I'm sorry, I wasn't able to complete that request."
 
 class Orchestrator:
     """
-    Stateless pipeline runner with tool-calling support.
+    Pipeline runner with tool-calling support and rolling conversation memory.
 
     Providers and the tool registry are injected at construction.
     run_pipeline() is the only public method; the wake engine calls it
     once per detection and blocks until the cycle is complete.
+
+    Conversation history is stored in self.history and included in every
+    LLM call so follow-up questions resolve correctly. History is capped
+    at self.max_history messages; the oldest pair is dropped when full.
     """
 
     def __init__(
@@ -57,6 +65,10 @@ class Orchestrator:
         self.system_prompt = config.llm_system_prompt
         self.tool_registry = tool_registry
         self.max_tool_rounds = config.llm_max_tool_rounds
+
+        # Rolling conversation memory — persists across pipeline invocations
+        self.history: list = []
+        self.max_history: int = 8  # keep last 8 messages (4 user/assistant pairs)
 
     def run_pipeline(self) -> None:
         """
@@ -105,21 +117,22 @@ class Orchestrator:
         """
         Run the multi-turn LLM + tool execution loop.
 
-        Conversation starts with the system prompt and the user's message.
+        Conversation is built as:
+            [system prompt] + [rolling history] + [current user message]
+
         Each round:
           - If the LLM returns tool calls: execute them, append results, repeat.
-          - If the LLM returns text: return it as the final answer.
+          - If the LLM returns text: save the exchange to history and return it.
         Loop is capped at max_tool_rounds to prevent runaway chains.
 
         Returns the final natural language response string.
         """
         logger.info("[LLM]")
 
-        # Build the initial conversation
-        messages = [
-            {"role": "system", "content": self.system_prompt},
-            {"role": "user",   "content": user_text},
-        ]
+        # Build conversation: system + rolling history + current user turn
+        messages = [{"role": "system", "content": self.system_prompt}]
+        messages.extend(self.history)
+        messages.append({"role": "user", "content": user_text})
 
         # Provide tool specs only if tools are registered
         tools = self.tool_registry.specs() if self.tool_registry else None
@@ -127,9 +140,13 @@ class Orchestrator:
         for round_num in range(1, self.max_tool_rounds + 1):
             response = self.llm.chat(messages, tools=tools)
 
-            # --- Final text response: done ---
+            # --- Final text response: save to history and return ---
             if not response.has_tool_calls:
-                return response.text or _FALLBACK_RESPONSE
+                final_text = response.text or _FALLBACK_RESPONSE
+                self.history.append({"role": "user",      "content": user_text})
+                self.history.append({"role": "assistant", "content": final_text})
+                self.history = self.history[-self.max_history:]
+                return final_text
 
             # --- Tool calls: execute each and append results ---
             logger.info(f"  [TOOL ROUND {round_num}/{self.max_tool_rounds}]")
