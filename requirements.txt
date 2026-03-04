@@ -21,3 +21,6 @@ faster-whisper>=1.1.0
 
 # LLM and tool HTTP calls (vLLM, Ollama, ElevenLabs, WebSearch all use HTTP)
 requests>=2.31.0
+
+# OpenAI LLM backend (optional, required only when LLM_BACKEND=openai)
+openai>=1.0.0

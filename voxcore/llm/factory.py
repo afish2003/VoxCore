@@ -11,6 +11,7 @@ from voxcore.config import Config
 from voxcore.llm.base import LLMClient
 from voxcore.llm.vllm import VLLMClient
 from voxcore.llm.ollama import OllamaClient
+from voxcore.llm.openai import OpenAIClient
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ def get_llm(config: Config) -> LLMClient:
     Supported backends (set LLM_BACKEND in .env):
         ollama  - Local Ollama server, CPU-friendly (default)
         vllm    - GPU inference via vLLM OpenAI-compatible API
+        openai  - OpenAI Chat Completions API (stable tool calling)
     """
     backend = config.llm_backend.lower()
 
@@ -29,8 +31,10 @@ def get_llm(config: Config) -> LLMClient:
         return OllamaClient(config)
     if backend == "vllm":
         return VLLMClient(config)
+    if backend == "openai":
+        return OpenAIClient(config)
 
     raise ValueError(
         f"Unknown LLM_BACKEND: '{backend}'. "
-        f"Supported options: 'ollama', 'vllm'"
+        f"Supported options: 'ollama', 'vllm', 'openai'"
     )

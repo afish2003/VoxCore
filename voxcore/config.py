@@ -29,7 +29,7 @@ class Config:
     whisper_lang: str       # e.g. "en", or "auto"
 
     # --- LLM ---
-    llm_backend: str        # "ollama" / "vllm"
+    llm_backend: str        # "ollama" / "vllm" / "openai"
     llm_system_prompt: str
     llm_temperature: float
     llm_top_p: float
@@ -43,6 +43,10 @@ class Config:
     ollama_url: str
     ollama_model: str
     ollama_timeout: int
+
+    openai_api_key: str
+    openai_model: str
+    openai_timeout: int
 
     # --- Text-to-Speech ---
     tts_provider: str       # "elevenlabs"
@@ -99,6 +103,10 @@ def load_config() -> Config:
         ollama_url=os.getenv("OLLAMA_URL", "http://127.0.0.1:11434/api/chat"),
         ollama_model=os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct"),
         ollama_timeout=int(os.getenv("OLLAMA_TIMEOUT", "120")),
+
+        openai_api_key=os.getenv("OPENAI_API_KEY", ""),
+        openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        openai_timeout=int(os.getenv("OPENAI_TIMEOUT", "30")),
 
         # TTS
         tts_provider=os.getenv("TTS_PROVIDER", "elevenlabs"),
