@@ -60,7 +60,7 @@ def main():
         ToolRegistry()
         .register(GetCurrentDatetime())
         .register(OpenApplication())
-        .register(WebSearch())
+        .register(WebSearch(instances=config.searx_instances))
     )
     logger.info(f"  Tools       : {len(tool_registry)} registered")
 

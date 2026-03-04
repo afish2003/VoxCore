@@ -24,9 +24,12 @@ class Config:
 
     # --- Speech-to-Text ---
     stt_provider: str       # "whisper"
-    whisper_model: str      # tiny / base / small / medium / large
+    whisper_model: str      # tiny / base / small / medium / large-v3
     whisper_device: str     # cpu / cuda
     whisper_lang: str       # e.g. "en", or "auto"
+    whisper_beam_size: int
+    whisper_vad_filter: bool
+    whisper_initial_prompt: str
 
     # --- LLM ---
     llm_backend: str        # "ollama" / "vllm" / "openai"
@@ -35,6 +38,7 @@ class Config:
     llm_top_p: float
     llm_max_tokens: int
     llm_max_tool_rounds: int  # max tool-call iterations before giving up
+    llm_max_history: int      # max conversation turns to keep
 
     vllm_url: str
     vllm_model: str
@@ -57,6 +61,9 @@ class Config:
     elevenlabs_similarity: float
     elevenlabs_style: float
     tts_max_chars: int
+
+    # --- Search ---
+    searx_instances: list   # ordered list of SearX base URLs
 
     # --- Audio I/O ---
     sample_rate: int
@@ -81,9 +88,12 @@ def load_config() -> Config:
 
         # STT
         stt_provider=os.getenv("STT_PROVIDER", "whisper"),
-        whisper_model=os.getenv("WHISPER_MODEL", "small"),
-        whisper_device=os.getenv("WHISPER_DEVICE", "cpu"),
+        whisper_model=os.getenv("WHISPER_MODEL", "large-v3"),
+        whisper_device=os.getenv("WHISPER_DEVICE", "cuda"),
         whisper_lang=os.getenv("WHISPER_LANG", "en"),
+        whisper_beam_size=int(os.getenv("WHISPER_BEAM_SIZE", "5")),
+        whisper_vad_filter=os.getenv("WHISPER_VAD_FILTER", "true").lower() == "true",
+        whisper_initial_prompt=os.getenv("WHISPER_INITIAL_PROMPT", ""),
 
         # LLM
         llm_backend=os.getenv("LLM_BACKEND", "ollama"),
@@ -95,6 +105,7 @@ def load_config() -> Config:
         llm_top_p=float(os.getenv("LLM_TOP_P", "0.9")),
         llm_max_tokens=int(os.getenv("LLM_MAX_TOKENS", "200")),
         llm_max_tool_rounds=int(os.getenv("LLM_MAX_TOOL_ROUNDS", "5")),
+        llm_max_history=int(os.getenv("LLM_MAX_HISTORY", "10")),
 
         vllm_url=os.getenv("VLLM_URL", "http://127.0.0.1:8000/v1/chat/completions"),
         vllm_model=os.getenv("VLLM_MODEL", "Qwen/Qwen2.5-7B-Instruct"),
@@ -118,13 +129,24 @@ def load_config() -> Config:
         elevenlabs_style=float(os.getenv("ELEVENLABS_STYLE", "0.3")),
         tts_max_chars=int(os.getenv("TTS_MAX_CHARS", "300")),
 
+        # Search
+        searx_instances=[
+            u.strip()
+            for u in os.getenv(
+                "SEARX_INSTANCES",
+                "https://searx.tiekoetter.com,https://search.sapti.me,"
+                "https://searx.bndkt.io,https://searx.fmac.xyz",
+            ).split(",")
+            if u.strip()
+        ],
+
         # Audio I/O
         sample_rate=int(os.getenv("AUDIO_SAMPLE_RATE", "16000")),
         channels=1,
         chunk_size=int(os.getenv("AUDIO_CHUNK_SIZE", "1024")),
         vad_energy_threshold=int(os.getenv("VAD_ENERGY_THRESHOLD", "500")),
-        vad_silence_duration=float(os.getenv("VAD_SILENCE_DURATION", "1.5")),
-        record_max_duration=float(os.getenv("RECORD_MAX_DURATION", "10.0")),
+        vad_silence_duration=float(os.getenv("VAD_SILENCE_DURATION", "2.0")),
+        record_max_duration=float(os.getenv("RECORD_MAX_DURATION", "15.0")),
 
         # Logging
         log_level=os.getenv("LOG_LEVEL", "INFO"),
