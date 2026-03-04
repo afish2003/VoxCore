@@ -1,11 +1,9 @@
 """
 WebSearch tool.
 
-Uses the DuckDuckGo HTML search endpoint to return real result snippets
-(titles + descriptions). This is more reliable than the Instant Answer API,
-which frequently returns no results for anything outside its knowledge-base.
-
-No API key required.
+Uses the SearX public JSON API (searx.tiekoetter.com) to return real search
+result snippets. SearX returns structured JSON directly — no HTML scraping,
+no regex parsing, no API key required.
 
 Results are capped at ~300 characters total so the LLM receives a concise
 context block rather than a wall of text.
@@ -23,12 +21,8 @@ from voxcore.tools.base import BaseTool
 
 logger = logging.getLogger(__name__)
 
-_DDG_HTML_URL = "https://html.duckduckgo.com/html/"
-_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/120.0.0.0 Safari/537.36"
-)
+_SEARX_URL = "https://searx.tiekoetter.com/search"
+_USER_AGENT = "VoxCore/1.0 (voice assistant; research)"
 
 # Maximum total characters returned to the LLM
 _MAX_RESULT_CHARS = 300
@@ -55,27 +49,6 @@ def _normalize_query(query: str) -> str:
     if normalized != query:
         logger.info(f"Query normalized: {query!r} -> {normalized!r}")
     return normalized
-
-
-def _parse_snippets(html: str, max_results: int) -> list[tuple[str, str]]:
-    """
-    Extract (title, snippet) pairs from DuckDuckGo HTML response.
-
-    DuckDuckGo HTML results follow a consistent structure:
-        <a class="result__a" ...>Title</a>
-        <a class="result__snippet" ...>Snippet text</a>
-
-    We use simple regex to avoid a BeautifulSoup dependency.
-    """
-    title_pattern   = re.compile(r'class="result__a"[^>]*>(.*?)</a>', re.DOTALL)
-    snippet_pattern = re.compile(r'class="result__snippet"[^>]*>(.*?)</a>', re.DOTALL)
-    tag_strip       = re.compile(r'<[^>]+>')
-
-    titles   = [tag_strip.sub("", t).strip() for t in title_pattern.findall(html)]
-    snippets = [tag_strip.sub("", s).strip() for s in snippet_pattern.findall(html)]
-
-    pairs = list(zip(titles, snippets))
-    return pairs[:max_results]
 
 
 class WebSearch(BaseTool):
@@ -106,31 +79,30 @@ class WebSearch(BaseTool):
         logger.info(f"Web search: {query!r}")
 
         try:
-            response = requests.post(
-                _DDG_HTML_URL,
-                data={"q": query, "b": "", "kl": "us-en"},
-                headers={
-                    "User-Agent": _USER_AGENT,
-                    "Content-Type": "application/x-www-form-urlencoded",
-                },
+            response = requests.get(
+                _SEARX_URL,
+                params={"q": query, "format": "json", "language": "en"},
+                headers={"User-Agent": _USER_AGENT},
                 timeout=10,
-                allow_redirects=True,
             )
             response.raise_for_status()
+            data = response.json()
         except Exception as e:
             logger.error(f"Web search request failed: {e}")
             return f"Search failed: {e}"
 
-        pairs = _parse_snippets(response.text, max_results)
+        results = data.get("results", [])[:max_results]
 
-        if not pairs:
-            logger.info(f"No snippets parsed for query: {query!r}")
+        if not results:
+            logger.info(f"No results for query: {query!r}")
             return f"No results found for: {query}"
 
         # Build a compact numbered list capped at _MAX_RESULT_CHARS
         lines = ["Top results:"]
         total = len(lines[0])
-        for i, (title, snippet) in enumerate(pairs, 1):
+        for i, result in enumerate(results, 1):
+            title   = result.get("title", "").strip()
+            snippet = result.get("content", "").strip()
             entry = f"{i}. {title} – {snippet}"
             if total + len(entry) > _MAX_RESULT_CHARS:
                 # Truncate the snippet to fit within the budget
