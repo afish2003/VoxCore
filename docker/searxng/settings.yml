@@ -1,0 +1,27 @@
+# SearXNG settings for VoxCore local instance.
+#
+# This is a minimal config for localhost-only use.
+# JSON responses come from the ?format=json query parameter on requests,
+# not from a settings toggle here.
+#
+# For full configuration reference:
+#   https://docs.searxng.org/admin/settings/index.html
+
+use_default_settings: true
+
+general:
+  instance_name: "VoxCore Search"
+
+search:
+  default_lang: "en"
+  safe_search: 0
+  formats:
+    - html
+    - json
+
+server:
+  port: 8080
+  bind_address: "0.0.0.0"
+  secret_key: "voxcore-local-search-key"
+  limiter: false
+  public_instance: false

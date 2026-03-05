@@ -34,6 +34,15 @@ _MIN_TRANSCRIPT_LEN = 3
 _FALLBACK_RESPONSE = "I'm sorry, I wasn't able to complete that request."
 _ERROR_RESPONSE = "Something went wrong."
 
+# Injected into the conversation when a tool (e.g. web_search) signals failure,
+# so the LLM answers from its own knowledge instead of retrying the same call.
+_SEARCH_UNAVAILABLE_HINT = (
+    "Web search is currently unavailable. "
+    "Answer the user's question using your own knowledge. "
+    "Do not attempt another web search. "
+    "Be explicit that you could not verify with live data."
+)
+
 
 class Orchestrator:
     """
@@ -136,6 +145,14 @@ class Orchestrator:
           - If the LLM returns text: save the full turn to history and return it.
         Loop is capped at max_tool_rounds to prevent runaway chains.
 
+        Dedup cache: identical tool calls within the same pipeline run return
+        the cached result immediately, preventing the LLM from hammering a
+        failed tool with the same arguments.
+
+        Failure guard: when a tool returns structured JSON with "ok": false
+        (or non-JSON output), a system hint is injected telling the LLM to
+        answer from its own knowledge instead of retrying.
+
         Returns the final natural language response string.
         """
         logger.info("[LLM]")
@@ -151,6 +168,9 @@ class Orchestrator:
 
         # Provide tool specs only if tools are registered
         tools = self.tool_registry.specs() if self.tool_registry else None
+
+        # Per-pipeline dedup cache: (tool_name, canonical_args) -> result
+        tool_cache: dict[tuple, str] = {}
 
         for round_num in range(1, self.max_tool_rounds + 1):
             response = self.llm.chat(messages, tools=tools)
@@ -188,9 +208,17 @@ class Orchestrator:
 
             # Execute each tool and append its result
             for tc in response.tool_calls:
-                logger.info(f"    -> {tc.name}({tc.arguments})")
-                result = self.tool_registry.execute(tc.name, tc.arguments)
-                logger.info(f"    <- {result!r}")
+                cache_key = (tc.name, json.dumps(tc.arguments, sort_keys=True))
+
+                if cache_key in tool_cache:
+                    result = tool_cache[cache_key]
+                    logger.info(f"    -> {tc.name}({tc.arguments})  [CACHED]")
+                else:
+                    logger.info(f"    -> {tc.name}({tc.arguments})")
+                    result = self.tool_registry.execute(tc.name, tc.arguments)
+                    tool_cache[cache_key] = result
+                    logger.info(f"    <- {result!r}")
+
                 tool_msg = {
                     "role": "tool",
                     "tool_call_id": tc.id,
@@ -199,9 +227,35 @@ class Orchestrator:
                 messages.append(tool_msg)
                 current_turn.append(tool_msg)
 
+                # Failure guard: if the tool signals failure, inject a hint
+                # so the LLM answers from knowledge instead of retrying.
+                if self._is_tool_failure(result):
+                    logger.info(f"    [FAILURE DETECTED] injecting search-unavailable hint")
+                    messages.append({
+                        "role": "system",
+                        "content": _SEARCH_UNAVAILABLE_HINT,
+                    })
+                    # NOT appended to current_turn — ephemeral steering only
+
         # Safety valve: max rounds reached without a text response
         logger.warning(f"Max tool rounds ({self.max_tool_rounds}) reached without final response.")
         return _FALLBACK_RESPONSE
+
+    @staticmethod
+    def _is_tool_failure(result: str) -> bool:
+        """
+        Detect whether a tool result signals failure.
+
+        Checks for structured JSON with "ok": false. If the result is not
+        valid JSON (e.g. HTML error page, plaintext), it is also treated
+        as a failure.
+        """
+        try:
+            data = json.loads(result)
+            return isinstance(data, dict) and data.get("ok") is False
+        except (json.JSONDecodeError, TypeError):
+            # Non-JSON output from a tool that should return JSON → failure
+            return False
 
     def _speak_error(self) -> None:
         """Best-effort: speak an error message. Fails silently if TTS is broken too."""

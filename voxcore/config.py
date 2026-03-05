@@ -129,11 +129,12 @@ def load_config() -> Config:
         elevenlabs_style=float(os.getenv("ELEVENLABS_STYLE", "0.3")),
         tts_max_chars=int(os.getenv("TTS_MAX_CHARS", "300")),
 
-        # Search
+        # Search — local Docker instance first, public fallbacks after
         searx_instances=[
             u.strip()
             for u in os.getenv(
                 "SEARX_INSTANCES",
+                "http://127.0.0.1:8080,"
                 "https://searx.tiekoetter.com,https://search.sapti.me,"
                 "https://searx.bndkt.io,https://searx.fmac.xyz",
             ).split(",")
