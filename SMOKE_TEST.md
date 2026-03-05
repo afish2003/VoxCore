@@ -516,3 +516,73 @@ called in the `finally` block of `main()`.
 | No audio output | 1.4 | Check ELEVENLABS keys and Windows audio output device |
 | Long responses from Amy | 3.1 | Verify system prompt is loaded — add `logger.info(config.llm_system_prompt)` temporarily |
 | Process hangs on Ctrl+C | 4.4 | PyAudio stream leak — Porcupine or recorder stream not closed |
+
+---
+
+## Phase 5 — Next-Phase Upgrades (harvest wake word + hybrid TTS)
+
+Run these after completing Phases 0–4 to verify the new features.
+
+### 5.1 Wake word — "harvest" / ARVIS
+
+Pre-condition: `WAKE_KEYWORD_PATH=assets/wakewords/harvest_windows.ppn` set in `.env`.
+
+| Step | Expected result |
+|------|----------------|
+| `python main.py` | Startup log: `Custom wake model: .../harvest_windows.ppn` |
+| | Startup log: `Listening for 'HARVEST' (sensitivity=0.6)` |
+| Say "harvest" clearly | Pipeline triggers; log: `Wake triggered — keyword='harvest', sensitivity=0.6` |
+| Say "ARVIS" naturally | Pipeline triggers (primary goal — test in real lab conditions with fans on) |
+| Say "ARVIS" several times | Confirm recall is consistent; adjust `WAKE_SENSITIVITY` up/down if needed |
+| Set `WAKE_KEYWORD_PATH=` (empty) | Startup log: `Listening for 'JARVIS' ...` — falls back to built-in keyword |
+| Set `WAKE_KEYWORD_PATH=assets/wakewords/missing.ppn` | Startup fails immediately with `FileNotFoundError` and clear path message |
+
+**Sensitivity tuning:**
+- Too many false wakes → lower `WAKE_SENSITIVITY` (try 0.5)
+- Misses "ARVIS" too often → raise `WAKE_SENSITIVITY` (try 0.7)
+- No code change needed — update `.env` and restart
+
+### 5.2 Hybrid TTS
+
+Pre-condition: `TTS_PROVIDER=elevenlabs_hybrid` in `.env`.
+
+| Step | Expected result |
+|------|----------------|
+| Ask a short question ("What time is it?") | Log: `TTS [hybrid→flash] model=eleven_flash_v2_5 chars=... elapsed=...s` |
+| Ask for an explanation or story | Log: `TTS [v3(pcm_22050)] model=eleven_v3 emotion=neutral chars=... elapsed=...s` |
+| Prefix LLM reply with `[emotion:cheerful]` manually (edit system prompt to test) | Log shows `emotion=cheerful`; style value 0.70 sent to v3 |
+| Set `TTS_MODE=flash_only` | All responses log Flash regardless of length |
+| Set `TTS_MODE=v3_only` | All responses log v3; short ACKs still use v3 |
+| Set `TTS_EMOTE_MODEL=invalid_model_xyz` | v3 call fails; log: `v3 TTS failed (...), falling back to Flash`; audio plays via Flash — no crash |
+| Restore `TTS_EMOTE_MODEL=eleven_v3` | v3 responses resume normally |
+
+**If v3 returns HTTP 422 for pcm_22050:**
+The provider automatically retries with `pcm_24000`. Log will show:
+`v3 rejected pcm_22050 (422), trying next format`
+followed by `TTS [v3(pcm_24000)] ...` — no action required.
+
+### 5.3 Confirmation gate (only when WAKE_CONFIRM_GATE=true)
+
+Enable with `WAKE_CONFIRM_GATE=true` in `.env` before running these tests.
+
+| Step | Expected result |
+|------|----------------|
+| Make a short noise (tap, click) that might trigger Porcupine | Log: `Confirmation gate: rejected (RMS below threshold 200)` — no pipeline |
+| Say "ARVIS" clearly | Log: `Confirmation gate: confirmed` — pipeline runs |
+| Mic is very quiet → gate keeps rejecting real wakes | Lower `WAKE_CONFIRM_RMS_THRESHOLD` (try 100) |
+| Noisy environment → gate lets false wakes through | Raise `WAKE_CONFIRM_RMS_THRESHOLD` (try 400) |
+
+> **Reminder:** Leave `WAKE_CONFIRM_GATE=false` in production unless false positives are a real problem. The gate adds ~`WAKE_CONFIRM_DURATION` (0.8s) of latency to every valid wake.
+
+### 5.4 Regression — ensure prior phases still pass
+
+After enabling the new features, re-run the critical checks from earlier phases:
+
+| Phase | Check |
+|-------|-------|
+| 1.1 | Process starts cleanly; no import errors |
+| 1.2 | Wake word triggers (now "harvest") |
+| 1.3 | STT transcribes correctly |
+| 1.4 | Response audio plays without distortion (WAV format unchanged) |
+| 2.x | Tools still execute (datetime, app launch, web search) |
+| 4.4 | Ctrl+C shuts down cleanly (no stream leaks) |
