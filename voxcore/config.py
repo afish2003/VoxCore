@@ -18,9 +18,14 @@ load_dotenv()
 class Config:
     # --- Wake Word ---
     wake_engine: str        # "porcupine"
-    wake_keyword: str       # e.g. "jarvis", "computer", "alexa"
+    wake_keyword: str       # e.g. "jarvis", "computer", "alexa" (built-in)
     wake_sensitivity: float
     picovoice_access_key: str
+    # Custom .ppn model — overrides wake_keyword when set
+    wake_keyword_path: str  # path to .ppn file; empty = use built-in keyword
+    wake_confirm_gate: bool     # post-wake energy gate; default False
+    wake_confirm_duration: float  # seconds to capture for gate; default 0.8
+    wake_confirm_rms_threshold: int  # RMS floor for gate (mic-dependent); default 200
 
     # --- Speech-to-Text ---
     stt_provider: str       # "whisper"
@@ -53,7 +58,7 @@ class Config:
     openai_timeout: int
 
     # --- Text-to-Speech ---
-    tts_provider: str       # "elevenlabs"
+    tts_provider: str       # "elevenlabs" | "elevenlabs_hybrid"
     elevenlabs_api_key: str
     elevenlabs_voice_id: str
     elevenlabs_model_id: str
@@ -61,6 +66,11 @@ class Config:
     elevenlabs_similarity: float
     elevenlabs_style: float
     tts_max_chars: int
+    # Hybrid TTS routing (used by elevenlabs_hybrid provider)
+    tts_fast_model: str     # model for short/utility responses
+    tts_emote_model: str    # model for expressive/narrative responses
+    tts_mode: str           # "hybrid" | "flash_only" | "v3_only"
+    tts_emotion_default: str  # default emotion when no [emotion:tag] present
 
     # --- Search ---
     searx_instances: list   # ordered list of SearX base URLs
@@ -85,6 +95,10 @@ def load_config() -> Config:
         wake_keyword=os.getenv("WAKE_KEYWORD", "jarvis"),
         wake_sensitivity=float(os.getenv("WAKE_SENSITIVITY", "0.5")),
         picovoice_access_key=os.getenv("PICOVOICE_ACCESS_KEY", ""),
+        wake_keyword_path=os.getenv("WAKE_KEYWORD_PATH", ""),
+        wake_confirm_gate=os.getenv("WAKE_CONFIRM_GATE", "false").lower() == "true",
+        wake_confirm_duration=float(os.getenv("WAKE_CONFIRM_DURATION", "0.8")),
+        wake_confirm_rms_threshold=int(os.getenv("WAKE_CONFIRM_RMS_THRESHOLD", "200")),
 
         # STT
         stt_provider=os.getenv("STT_PROVIDER", "whisper"),
@@ -128,6 +142,11 @@ def load_config() -> Config:
         elevenlabs_similarity=float(os.getenv("ELEVENLABS_SIMILARITY", "0.85")),
         elevenlabs_style=float(os.getenv("ELEVENLABS_STYLE", "0.3")),
         tts_max_chars=int(os.getenv("TTS_MAX_CHARS", "300")),
+        # Hybrid TTS routing
+        tts_fast_model=os.getenv("TTS_FAST_MODEL", "eleven_flash_v2_5"),
+        tts_emote_model=os.getenv("TTS_EMOTE_MODEL", "eleven_v3"),
+        tts_mode=os.getenv("TTS_MODE", "hybrid"),
+        tts_emotion_default=os.getenv("TTS_EMOTION_DEFAULT", "neutral"),
 
         # Search — local Docker instance first, public fallbacks after
         searx_instances=[
