@@ -140,6 +140,7 @@ class HybridElevenLabsTTS(TTSProvider):
         self.emotion_default = config.tts_emotion_default.lower()
         self.v3_text_normalize = config.tts_v3_text_normalize
         self._v3_base_style = config.tts_v3_style
+        self._v3_speed = config.tts_v3_speed
 
         # Flash voice settings — same as the standalone ElevenLabsTTS provider.
         # Driven by the existing ELEVENLABS_* vars so behaviour is unchanged.
@@ -170,6 +171,7 @@ class HybridElevenLabsTTS(TTSProvider):
             f"stability={config.tts_v3_stability}, "
             f"similarity={config.tts_v3_similarity}, "
             f"style={config.tts_v3_style}, "
+            f"speed={config.tts_v3_speed}, "
             f"text_normalize={config.tts_v3_text_normalize}"
         )
 
@@ -284,7 +286,8 @@ class HybridElevenLabsTTS(TTSProvider):
             sample_rate = _PCM_SAMPLE_RATES[pcm_format]
             try:
                 wav = self._call_elevenlabs(
-                    synth_text, self.emote_model, v3_settings, pcm_format, sample_rate
+                    synth_text, self.emote_model, v3_settings, pcm_format, sample_rate,
+                    speed=self._v3_speed,
                 )
                 self._log_timing(
                     f"v3({pcm_format})", self.emote_model, emotion, synth_text, t0
@@ -349,23 +352,29 @@ class HybridElevenLabsTTS(TTSProvider):
         voice_settings: dict,
         pcm_format: str,
         sample_rate: int,
+        speed: float | None = None,
     ) -> bytes:
         """
         POST to ElevenLabs TTS endpoint and return WAV bytes.
 
         Accepts a fully-formed voice_settings dict so Flash and v3 each
         provide their own independently-tuned values.
+
+        speed: top-level payload parameter (1.0 = normal, <1.0 = slower).
+               Only included when explicitly provided; Flash omits it entirely.
         """
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{self.voice_id}"
         headers = {
             "xi-api-key": self.api_key,
             "Content-Type": "application/json",
         }
-        payload = {
+        payload: dict = {
             "text": text,
             "model_id": model_id,
             "voice_settings": voice_settings,
         }
+        if speed is not None:
+            payload["speed"] = speed
 
         response = requests.post(
             url,
