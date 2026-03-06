@@ -586,3 +586,19 @@ After enabling the new features, re-run the critical checks from earlier phases:
 | 1.4 | Response audio plays without distortion (WAV format unchanged) |
 | 2.x | Tools still execute (datetime, app launch, web search) |
 | 4.4 | Ctrl+C shuts down cleanly (no stream leaks) |
+
+### 5.5 v3 voice character — "calm ARVIS" preset
+
+Pre-condition: `TTS_PROVIDER=elevenlabs_hybrid`, `TTS_MODE=hybrid` (or `v3_only` to force v3 for all).
+
+| Step | Expected result |
+|------|----------------|
+| `python main.py` | Startup log: `v3 voice settings — stability=0.80, similarity=0.75, style=0.0, text_normalize=True` |
+| Ask a longer question (≥80 chars response) | Log: `TTS [v3(pcm_22050)] ...` — v3 used, audio sounds calm and grounded |
+| Compare energy level | v3 response should match Flash's measured tone — not cheerleader-y, not monotone |
+| **Tuning: still bubbly** | Raise `TTS_V3_STABILITY=0.90`, restart, retest |
+| **Tuning: too flat/robotic** | Try `TTS_V3_STYLE=0.05` for a slight lift |
+| Ask ARVIS something that produces "!!!" in the LLM reply | Normaliser converts to "."; v3 delivery stays level |
+| Set `TTS_V3_TEXT_NORMALIZE=false` | Exclamation marks pass through — v3 may become more energetic |
+| Use `[emotion:excited]` prefix in a test prompt | Log shows `emotion=excited`; style offset adds 0.15 on top of base — subtle, not shrill |
+| Flash path regression | Short ACK still routes to Flash; Flash audio unaffected by any v3 setting changes |

@@ -71,6 +71,12 @@ class Config:
     tts_emote_model: str    # model for expressive/narrative responses
     tts_mode: str           # "hybrid" | "flash_only" | "v3_only"
     tts_emotion_default: str  # default emotion when no [emotion:tag] present
+    # v3-specific voice settings — independent of Flash (ELEVENLABS_*) settings.
+    # v3 reacts much more strongly to low stability; keep it high for calm delivery.
+    tts_v3_stability: float      # default 0.80 (vs Flash's 0.45)
+    tts_v3_similarity: float     # default 0.75
+    tts_v3_style: float          # default 0.0 (expressiveness off by default)
+    tts_v3_text_normalize: bool  # strip !/ALL-CAPS/emojis before v3 synthesis
 
     # --- Search ---
     searx_instances: list   # ordered list of SearX base URLs
@@ -147,6 +153,11 @@ def load_config() -> Config:
         tts_emote_model=os.getenv("TTS_EMOTE_MODEL", "eleven_v3"),
         tts_mode=os.getenv("TTS_MODE", "hybrid"),
         tts_emotion_default=os.getenv("TTS_EMOTION_DEFAULT", "neutral"),
+        # v3 voice preset
+        tts_v3_stability=float(os.getenv("TTS_V3_STABILITY", "0.80")),
+        tts_v3_similarity=float(os.getenv("TTS_V3_SIMILARITY", "0.75")),
+        tts_v3_style=float(os.getenv("TTS_V3_STYLE", "0.0")),
+        tts_v3_text_normalize=os.getenv("TTS_V3_TEXT_NORMALIZE", "true").lower() == "true",
 
         # Search — local Docker instance first, public fallbacks after
         searx_instances=[
