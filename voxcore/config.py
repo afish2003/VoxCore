@@ -154,9 +154,9 @@ def load_config() -> Config:
         tts_mode=os.getenv("TTS_MODE", "hybrid"),
         tts_emotion_default=os.getenv("TTS_EMOTION_DEFAULT", "neutral"),
         # v3 voice preset
-        tts_v3_stability=float(os.getenv("TTS_V3_STABILITY", "0.80")),
+        tts_v3_stability=float(os.getenv("TTS_V3_STABILITY", "0.70")),
         tts_v3_similarity=float(os.getenv("TTS_V3_SIMILARITY", "0.75")),
-        tts_v3_style=float(os.getenv("TTS_V3_STYLE", "0.0")),
+        tts_v3_style=float(os.getenv("TTS_V3_STYLE", "0.05")),
         tts_v3_text_normalize=os.getenv("TTS_V3_TEXT_NORMALIZE", "true").lower() == "true",
 
         # Search — local Docker instance first, public fallbacks after
