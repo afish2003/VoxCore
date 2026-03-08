@@ -86,6 +86,7 @@ checkpoints/
 *.onnx
 *.bin
 *.ckpt
+.claude/
 
 # =========================
 # Audio Files (optional)
